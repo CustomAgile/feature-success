@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Feature Success</title>
+
+    <script type="text/javascript" src="/apps/2.0/sdk.js"></script>
+
+    <script type="text/javascript">
+        Rally.onReady(function () {
+                Ext.define('Rally.technicalservices.ProgressCalculator', {
+    extend: 'Rally.data.lookback.calculator.TimeSeriesCalculator',
+    config: {
+        fieldName: null,
+        fieldValues: []
+    },
+
+    constructor: function(config) {
+        this.initConfig(config);
+        this.callParent(arguments);
+    },
+    
+    getMetrics: function () {
+         return Ext.Array.map(this.fieldValues, function(fieldValue) {
+            return  {
+                as: fieldValue,
+                groupByField: this.fieldName,
+                allowedValues: [fieldValue],
+                f: 'groupByCount',
+                display: 'area'
+            };
+        }, this);
+     },
+     
+     prepareCalculator: function (calculatorConfig) {
+        var config = Ext.Object.merge(calculatorConfig, {
+            granularity: this.config.granularity || this.lumenize.Time.DAY,
+            tz: this.config.timeZone,
+            holidays: this.config.holidays,
+            workDays: this._getWorkdays()
+        });
+
+        return new this.lumenize.TimeSeriesCalculator(config);
+    },
+    
+    runCalculation: function (snapshots) {
+        var calculatorConfig = this._prepareCalculatorConfig(),
+            seriesConfig = this._buildSeriesConfig(calculatorConfig);
+
+        var calculator = this.prepareCalculator(calculatorConfig);
+        calculator.addSnapshots(snapshots, this._getStartDate(snapshots), this._getEndDate(snapshots));
+
+        var chart_data = this._transformLumenizeDataToHighchartsSeries(calculator, seriesConfig);
+        
+        console.log(chart_data);
+        
+        chart_data.categories = Ext.Array.map(chart_data.categories, function(datum){
+            return " ";
+        });
+        
+        chart_data.series = this._updateColors(chart_data.series);
+        console.log(chart_data);
+        
+        return chart_data;
+    },
+    
+    _updateColors: function(chart_series) {
+        var updated_series = Ext.Array.map(chart_series, function(series) {
+            console.log(series);
+            if ( !series.name ) { series.name = 'none'; }
+            if ( series.name == 'Abandon' ) {
+                series.color = "#F66349";
+            }
+            console.log(series);
+            
+            return series;
+        });
+        
+        return updated_series;
+    }
+        
+});
+                Ext.override(Rally.ui.popover.PopoverFactory, {
+    _onRecordLoad: function(record, options){
+        console.log('yo',options);
+        
+        if (this.popovers[options.field]) {
+            options.record = record;
+            return this.popovers[options.field](options);
+        }
+        
+        if ( options.field == "Notes" ) {
+            options.record = record;
+            return Ext.create('Rally.technicalservices.NotesPopover', options);
+            
+        }
+    }
+});
+
+/**
+ * Create a popover to display the Notes of a specified record.
+ * Generally this class will not be instantiated directly but instead will be obtained
+ * via the Rally.ui.popover.PopoverFactory#bake method.
+ *
+ *     Rally.ui.popover.PopoverFactory.bake({
+ *         field: 'Description'
+ *     });
+ */
+Ext.define('Rally.technicalservices.NotesPopover', {
+    alias: 'widget.tsnotespopover',
+    extend: 'Rally.ui.popover.HoverablePopover',
+
+    id: 'notes-popover',
+    cls: 'description-popover',
+
+    constructor: function(config) {
+        config.items = [
+            {
+                xtype: 'tsnotesrichtextview',
+                storeConfig: {
+                    context: config.context,
+                    model: config.record.self,
+                    filters: [
+                        {
+                            property: 'ObjectID',
+                            operation: '=',
+                            value: config.record.get('ObjectID')
+                        }
+                    ]
+                },
+                listeners: {
+                    viewready: function() {
+                        if (Rally.BrowserTest) {
+                            Rally.BrowserTest.publishComponentReady(this);
+                        }
+                    },
+                    scope: this
+                }
+            }
+        ];
+        this.callParent(arguments);
+    }
+});
+
+/**
+ * @private
+ * Displays rich text description for a record.
+ */
+Ext.define('Rally.technicalservices.NotesRichTextView', {
+    extend: 'Ext.view.View',
+    alias: 'widget.tsnotesrichtextview',
+    requires: [
+        'Rally.nav.DetailLink',
+        'Rally.ui.renderer.template.FormattedIDTemplate'
+    ],
+    cls: 'description-richtext-view',
+    itemSelector : 'div.notes',
+    loadMask: false,
+
+    detailsField: 'Notes',
+    detailsFieldBackup: 'Notes',
+
+    initComponent: function() {
+        this._setDetailsField();
+        this._createTpl();
+
+        if (!this.store) {
+            this.store = this._createStore();
+        }
+
+        this.callParent(arguments);
+    },
+
+    _createStore: function() {
+        var defaultConfig = {
+            fetch: ['Name', 'FormattedID', this.detailsField],
+            limit: 1,
+            pageSize: 1,
+            autoLoad: true,
+            requester: this
+        };
+
+        return Ext.create('Rally.data.wsapi.Store', Ext.apply(defaultConfig, this.storeConfig));
+    },
+
+    prepareData: function(data) {
+        data.FormattedID = Ext.create('Rally.ui.renderer.template.FormattedIDTemplate').apply(data);
+        return data;
+    },
+
+    _setDetailsField: function() {
+        var model = (this.storeConfig && this.storeConfig.model) || (this.store && this.store.model);
+        if (model && !model.getField(this.detailsField) && model.getField(this.detailsFieldBackup)) {
+            this.detailsField = this.detailsFieldBackup;
+        }
+    },
+
+    _createTpl: function() {
+        //  Have to create the template this way to maintain scope when it is applied
+        this.tpl = new Ext.XTemplate(
+            '<tpl>',
+                '<div class="header">',
+                    '<b>{[values[0].FormattedID]}:</b> {[values[0].Name]}',
+                '</div>',
+                '<tpl if="this.hasDetails(values)">',
+                    '<div class="description">{[this.getDetails(values)]}</div>',
+                '</tpl>',
+            '</tpl>'
+        );
+
+        this.tpl.self.addMembers({
+            hasDetails: Ext.bind(function(data) {
+                return data && data[0] && !_.isEmpty(data[0][this.detailsField]);
+            }, this),
+
+            getDetails: Ext.bind(function(data) {
+                return data[0][this.detailsField];
+            }, this)
+        });
+    }
+});
+
+                Ext.define('Rally.technicalservices.ChartPopper', {
+    extend: 'Rally.ui.dialog.Dialog', 
+    id        : 'chartPopper',
+    title     : 'Learning Flow',
+    chartTitle: '',
+    closable  : true,
+    
+    field     : null,
+    model     : 'PortfolioItem/Feature',
+    
+    parentRecord    : null,
+    
+    items: [{xtype:'container', itemId:'display_box'}],
+    
+    initComponent: function() {
+        this.callParent(arguments);
+        
+        var field = this.field;
+        var model = this.model;
+                
+        this._getValuesForField(model,field).then({
+            scope: this,
+            success: function(values) {
+                this._makeChart(model,field,values);
+            },
+            failure: function(msg) {
+                 Ext.Msg.alert(msg);
+            }
+        });
+
+    },
+    
+    _getValuesForField: function(model,field) {
+        var deferred = Ext.create('Deft.Deferred');
+        
+        Rally.data.ModelFactory.getModel({
+            type: model,
+            success: function(model) {
+                model.getField(field).getAllowedValueStore().load({
+                    callback: function(records, operation, success) {
+                        var values = Ext.Array.map(records, function(record) {
+                            return record.get('StringValue');
+                        });
+                        deferred.resolve(values);
+                    }
+                });
+            },
+            failure: function(msg) { deferred.reject(msg); }
+        });  
+        
+        return deferred.promise;
+    },
+    
+    _makeChart: function(model,field,values) {        
+        var container = this.down('#display_box');
+        container.removeAll();
+        
+        container.add({
+            xtype: 'rallychart',
+            storeType: 'Rally.data.lookback.SnapshotStore',
+            storeConfig: this._getStoreConfig(model,field),
+            calculatorType: 'Rally.technicalservices.ProgressCalculator',
+            calculatorConfig: {
+                fieldName: field,
+                fieldValues: values,
+                granularity: 'hour',
+                startDate: Rally.util.DateTime.add(new Date(), 'hour', -30)
+            },
+            chartConfig: this._getChartConfig(),
+            chartColors: ['#000', '#F66349','#8DC63F','#F8B500']
+        });
+    },
+    
+    _getStoreConfig: function(model,field) {
+        return { 
+            find: {
+                Parent: this.parentRecord.get('ObjectID'),
+                _TypeHierarchy: model
+            },
+            fetch: [field],
+            hydrate: [field]
+        };
+    },
+    
+    _getChartConfig: function() {
+        return {
+            chart: {
+                zoomType: 'xy'
+            },
+            title: {
+                text: this.chartTitle
+            },
+            xAxis: {
+                tickmarkPlacement: 'on',
+                tickInterval: 1
+            },
+            yAxis: [
+                {
+                    title: {
+                        text: ' '
+                    }
+                }
+            ],
+            plotOptions: {
+                series: {
+                    marker: {
+                        enabled: false
+                    }
+                },
+                area: {
+                    stacking: 'normal'
+                }
+            },
+            tooltip: { enabled: false }
+        };
+    }
+});
+
+                Ext.define('Rally.technicalservices.VariableComboBoxEditor', {
+    extend:  Ext.grid.CellEditor ,
+    alias: 'widget.tsvariablecomboboxeditor',
+
+    ignoreNoChange: true,
+
+    initComponent: function() {
+        console.log('field:', this.field);
+        
+        this.callParent(arguments);
+        this.field.on('select', this._onValueSelected, this);
+    },
+
+    getName: function() {
+        return this.field && this.field.getName();
+    },
+
+    getValue: function() {
+        return this._valueSelected ? this.callParent(arguments) : this.startValue;
+    },
+
+    _onValueSelected: function() {
+        this._valueSelected = true;
+    },
+
+    onHide: function() {
+        this.callParent(arguments);
+        delete this._valueSelected;
+        this.field.setValue('');
+    },
+
+    startEdit: function(el, value) {
+        this.field.setOriginalValue(value);
+        this.callParent(arguments);
+    }
+});
+
+                Ext.define('CustomApp', {
+    extend: 'Rally.app.App',
+    componentCls: 'app',
+    featureRecommendationDropdownField: 'c_Recommendation',
+    initiativeRecommendationDropdownField: 'c_InitiativeRecommendation',
+    recommendationSummaryField: 'c_RecommendationSummary',
+    winnerField: 'c_Winner',
+    voteField: 'c_Votes',
+    items: [
+        {xtype:'container',itemId:'selector_box', padding: 10},
+        {xtype:'container',itemId:'display_box', padding: 10}
+    ],
+    
+    launch: function() {
+        var me = this;
+        var feature_fields = ['FormattedID','Name','Notes','ConversationPost','PercentDoneByStoryCount',
+            'ObjectID',
+            this.featureRecommendationDropdownField, this.initiativeRecommendationDropdownField, this.winnerField];
+        
+        Ext.create('Rally.data.wsapi.TreeStoreBuilder').build({
+            models: ['portfolioitem/theme'],
+            fetch: feature_fields,
+            autoLoad: true,
+            enableHierarchy: true
+        }).then({
+            success: function(store) {
+                me.down('#display_box').add({
+                    xtype: 'rallytreegrid',
+                    columnCfgs: me._getColumns(),
+                    store: store,
+                    listeners: {
+                        itemclick: function(view, record, item, index, evt) {
+                            var column_index = view.getPositionByEvent(evt).column;
+                            var columns = me._getColumns();
+                            var check_index = column_index - 5;
+                            if (check_index > 0 ) {
+                                var column = columns[check_index];
+                                
+                                if ( column.dataIndex == "Notes" ) { 
+                                    me._showNotesPopup(record,item);
+                                }
+                                if ( column.dataIndex == "ObjectID" ) {
+                                    // using objectID to put a chart icon on there
+                                    if ( Ext.util.Format.lowercase(record.get('_type')) == 'portfolioitem/initiative' ) {
+                                        me._showInitiativeFlow(record);
+                                    }
+                                }
+                                
+                                if ( column.dataIndex == me.voteField ) {
+                                    // using objectID to put a chart icon on there                                    
+                                    if ( Ext.util.Format.lowercase(record.get('_type')) == 'portfolioitem/feature' ) {
+                                        if ( column.voteIndex == "up" ) {
+                                            me._changeVote(record,me.voteField,1);
+                                        } 
+                                        if ( column.voteIndex == "down") {
+                                            me._changeVote(record,me.voteField,-1);
+                                        }
+                                    }
+                                }
+                                
+                            }
+                            
+                        },
+                        scope : this
+                    }
+                });
+             }
+         });
+    },
+    
+    _addSelectors: function(container) {
+        container.add({
+            xtype:'rallybutton', 
+            cls:'secondary', 
+            text:'Choose Initiative',
+            listeners: {
+                scope: this,
+                click: this._launchPIPicker
+            }
+        });
+    },
+    
+    _updateData: function(initiative) {
+        var me = this;
+        
+        var feature_fields = ['FormattedID','Name','Notes',this.featureRecommendationDropdownField, this.winnerField, this.recommendationSummaryField];
+        var feature_filter = [{property:'Parent.ObjectID', value:initiative.get('ObjectID')}];
+        
+        this._loadATypeWithAPromise('portfolioitem/feature',feature_fields, feature_filter ).then({
+            success: function(features) {
+                me._displayGrid(features);
+            },
+            failure: function(msg) {
+                 Ext.Msg.alert(msg);
+            }
+        });
+    },
+    
+    _loadATypeWithAPromise: function(model_name, model_fields,model_filter){
+        var deferred = Ext.create('Deft.Deferred');
+        var me = this;
+          
+        Ext.create('Rally.data.wsapi.Store', {
+            model: model_name,
+            fetch: model_fields,
+            filters: model_filter
+        }).load({
+            callback : function(records, operation, successful) {
+                if (successful){
+                    deferred.resolve(records);
+                } else {
+                    console.log("Failed: ", operation);
+                    deferred.reject('Problem loading: ' + operation.error.errors.join('. '));
+                }
+            }
+        });
+        return deferred.promise;
+    },
+    
+    _getColumns: function() {
+        var me = this;
+        
+        var specialComboFunction = function(field) {
+            console.log('field', field);
+            return {
+                xtype: 'tsvariablecomboboxeditor', 
+                field: {
+                    xtype: 'rallyfieldvaluecombobox',
+                    autoExpand: true,
+                    field: field,
+                    storeConfig: {
+                        autoLoad: false
+                    }
+                }
+           };
+        };
+        
+        var columns = [
+            {dataIndex:'Name', text:'name'},
+            {dataIndex:'PercentDoneByStoryCount', text: 'Progress' },
+            {
+                dataIndex:this.featureRecommendationDropdownField,
+                text:'Recommendation', 
+                listeners: {
+                    render: function(column) {
+                        console.log('col', column);
+                        console.log('editor', column.getEditor());
+                        return true;
+                    }
+                },
+                renderer: function(value,meta,record){
+                    
+                    if ( record.get("_type") == "portfolioitem/feature") {
+                        if ( value == "Abandon" ) {
+                            value = "<span class='red_label right'>" + value + "</span>";
+                            //meta.tdCls = "red";
+                        }
+                        if ( value == "Explore" ) {
+                            value = "<span class='yellow_label right'>" + value + "</span>";
+                        }
+                        if ( value == "Exploit" ) {
+                            value = "<span class='green_label right'>" + value + "</span>";
+                        }
+                    } 
+                    
+                    if ( record.get("_type") == "portfolioitem/initiative") {
+                        value = record.get(me.initiativeRecommendationDropdownField);
+                        
+                        if ( value == "Pivot" ) {
+                            value = "<span class='red_label'>" + value + "</span>";
+                        }
+
+                        if ( value == "Persevere" ) {
+                            value = "<span class='green_label'>" + value + "</span>";
+                        }
+                    } 
+                    return value;
+                }
+            },
+            {dataIndex: 'Notes', text:'<div class="icon-file"> </div>', width: 25, editor: false, 
+                renderer: function(value) {
+                    if (value) {
+                        return "<span class='icon-file'> </span>";
+                    }
+                    return "";
+                }
+            },
+            {dataIndex:'Discussion', width: 35, text:''},
+            {dataIndex:this.voteField, width: 35, text: '', editor: false, voteIndex: 'up', 
+                renderer: function(value,meta,record){
+                    if ( Ext.util.Format.lowercase(record.get('_type')) == "portfolioitem/feature" ) {
+                        if ( /\//.test(value) ) {
+                            var vote_array = value.split(/\//);
+                            var vote = vote_array[0];
+                            return "<span class='icon-thumbs-up'> </span>" + vote;
+                        }
+                        return "<span class='icon-thumbs-up'> </span>";
+                    }
+                    return "";
+                }
+            },
+            {dataIndex:this.voteField, width: 35, text: '', editor: false, voteIndex: 'down', 
+                renderer: function(value,meta,record){
+                    if ( Ext.util.Format.lowercase(record.get('_type')) == "portfolioitem/feature" ) {
+                        if ( /\//.test(value) ) {
+                            var vote_array = value.split(/\//);
+                            var vote = vote_array[1];
+                            return "<span class='icon-thumbs-down'> </span>" + vote;
+                        }
+                        return "<span class='icon-thumbs-down'> </span>";
+                    }
+                    return "";
+                }
+            },
+            {dataIndex: 'ObjectID', text:' ', width: 25, editor: false, 
+                renderer: function(value,meta,record) {
+                    if ( Ext.util.Format.lowercase(record.get('_type')) == "portfolioitem/initiative" ) {
+                        return "<span class='icon-graph'> </span>";
+                    }
+                    return "";
+                }
+            },
+            {dataIndex:this.winnerField, width: 25, text:'',editor: 'rallycheckboxfield', 
+                renderer: function(value) {
+                    if (value) {
+                        return "<span class='icon-flag'> </span>";
+                    }
+                    return "";
+                }
+            },
+            {dataIndex: this.recommendationSummaryField, text: 'Summary' }
+        ];
+        
+        return columns;
+    },
+    
+//    _displayGrid: function(records) {
+//        var me = this;
+//        var store = Ext.create('Rally.data.custom.Store',{data: records});
+//        var container = this.down('#display_box');
+//        
+//        container.removeAll();
+//        container.add({
+//            xtype:'rallygrid',
+//            columnCfgs: this._getColumns(),
+//            store: store,
+//            listeners: {
+//                itemclick: function(view, record, item, index, evt) {
+//                    var column_index = view.getPositionByEvent(evt).column;
+//                    var columns = me._getColumns();
+//                    console.log(columns[column_index].dataIndex);
+//                    if ( columns[column_index].dataIndex == "Notes" ) { 
+//                        // notes
+//                        me._showNotesPopup(record);
+//                    }
+//                    if ( columns[column_index].dataIndex == "ObjectID" ) {
+//                        // using objectID to put a chart icon on there
+//                        me._showInitiativeFlow(record);
+//                    }
+//                },
+//                scope : this
+//            }
+//        });
+//    },
+    
+    _launchPIPicker: function() {
+        var me = this;
+        Ext.create('Rally.ui.dialog.ArtifactChooserDialog', {
+            artifactTypes: ['portfolioitem/initiative'],
+            autoShow: true,
+            height: 250,
+            title: 'Choose Initiative',
+            multiple: false,
+            listeners: {
+                artifactchosen: function(dialog, selectedRecord){
+                    me._updateData(selectedRecord);
+                },
+                scope: this
+            }
+         });
+    },
+    
+    _showInitiativeFlow: function(record) {
+        var me = this;
+        var title = record.get('FormattedID') + ": " + record.get('Name');
+        
+        var magic_renderer = function(field,value,meta_data,record){
+            return me._magicRenderer(field,value,meta_data,record);
+        };
+        
+        Ext.create('Rally.technicalservices.ChartPopper', {
+            width         : Ext.getBody().getWidth() - 25,
+            height        : Ext.getBody().getHeight() - 25,
+            parentRecord  : record,
+            field         : this.featureRecommendationDropdownField,
+            title         : 'Learning Flow: ',
+            chartTitle    : record.get('FormattedID') + ": " + record.get('Name')
+        }).show();
+    },
+    
+    _showVotingDialog: function(record) {
+        var me = this;
+        var title = "Voting for " + record.get('FormattedID') + ": " + record.get('Name');
+        
+        Ext.create('Rally.technicalservices.VotePopper', {
+            title     : title,
+            width     : Ext.getBody().getWidth() - 25,
+            height    : Ext.getBody().getHeight() - 25,
+           
+            closable  : true,
+            
+            record    : record,
+            voteField : this.voteField,
+            context   : this.getContext()
+            
+        }).show();
+    },
+    
+    _showNotesPopup: function(record,htmlElement) {
+        var me = this;
+        var targetEl = Ext.get(htmlElement);
+
+        if (this.popover) {
+            this.popover.destroy();
+        }
+
+        this.popover = Rally.ui.popover.PopoverFactory.bake({
+            target: targetEl,
+            field: 'Notes',
+            record: record,
+            autoShow: true,
+            offsetFromTarget: [
+                {x: 0, y: -5},
+                {x: 5, y: 0},
+                {x: 0, y: 5},
+                {x: -5, y: 0}
+            ]/*,
+            placement: this.popoverPlacement*/
+        });
+
+    },
+    
+    _showInfoPopup: function(record, field_name) {
+        var me = this;
+       
+        var title = record.get('FormattedID') + ": " + record.get('Name');
+
+        
+        var magic_renderer = function(field,value,meta_data,record){
+            return me._magicRenderer(field,value,meta_data,record);
+        };
+        
+        Ext.create('Rally.ui.dialog.Dialog', {
+            id        : 'fieldPopup',
+            title     : title,
+            width     : Ext.getBody().getWidth() - 25,
+            height    : Ext.getBody().getHeight() - 25,
+            closable  : true,
+            /*layout    : 'fit',*/
+            items     : [{
+                xtype:  'container',
+                html: record.get(field_name)
+            }]
+        }).show();
+    },
+    
+    _changeVote: function(record,vote_field,direction) {
+        var votes = record.get(vote_field) || "0/0";
+        if ( !/\//.test(votes) ) {
+            console.log("Changing vote field from ", votes, " to 0/0");
+            votes = "0/0";
+        }
+        
+        var vote_array = votes.split(/\//);
+        var votes_up = parseInt(vote_array[0],10);
+        var votes_down = parseInt(vote_array[1],10);
+        
+        if ( direction > 0 ) {
+            votes_up += 1;
+        }
+        
+        if ( direction < 0 ) {
+            votes_down += 1;
+        }
+        
+        record.set(vote_field, votes_up + "/" + votes_down);
+        record.save(); // todo
+        
+    }
+});
+
+
+            Rally.launchApp('CustomApp', {
+                name:"Feature Success",
+	            parentRepos:""
+            });
+
+        });
+    </script>
+
+
+    <style type="text/css">
+        .app {
+  /* Add app styles here */
+}
+.red_label {
+  border: 1px solid #F66349;
+  background-color: #F66349;
+  color: white;
+  font-family: ProximaNovaSemiBold, helvetica, sans-serif;
+  padding: 4px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+.green_label {
+  border: 1px solid #8DC63F;
+  background-color: #8DC63F;
+  color: white;
+  font-family: ProximaNovaSemiBold, helvetica, sans-serif;
+  padding: 4px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+.yellow_label {
+  border: 1px solid #F8B500;
+  background-color: #F8B500;
+  color: white;
+  font-family: ProximaNovaSemiBold, helvetica, sans-serif;
+  padding: 4px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  margin: 0px auto;
+}
+.rally-grid .x-grid-row-summary > .red > .x-grid-cell-inner,
+.rally-grid .red > .x-grid-cell-inner {
+  border: 1px solid #F66349;
+  border-radius: 4px;
+  margin: 2px;
+  padding: 4px 0 !important;
+  text-align: center !important;
+  color: white;
+  text-transform: uppercase;
+  background: #F66349;
+}
+.rally-grid .x-grid-row-summary > .yellow > .x-grid-cell-inner,
+.rally-grid .yellow > .x-grid-cell-inner {
+  border: 1px solid #FAD200;
+  border-radius: 4px;
+  margin: 2px;
+  padding: 4px 0 !important;
+  text-align: center !important;
+  color: black;
+  text-transform: uppercase;
+  background: #FAD200;
+}
+.rally-grid .x-grid-row-summary > .green > .x-grid-cell-inner,
+.rally-grid .green > .x-grid-cell-inner {
+  border: 1px solid #8DC63F;
+  border-radius: 4px;
+  margin: 2px;
+  padding: 4px 0 !important;
+  text-align: center !important;
+  color: white;
+  text-transform: uppercase;
+  background: #8DC63F;
+}
+.rally-grid .x-grid-row-summary > .grey > .x-grid-cell-inner,
+.rally-grid .grey > .x-grid-cell-inner {
+  border: 1px solid #e4e4e4;
+  border-radius: 4px;
+  margin: 2px;
+  padding: 4px 0 !important;
+  text-align: center !important;
+  color: black;
+  background: #8DC63F;
+}
+.notes_recommendation {
+  font-family: ProximaNovaSemiBold,Helvetica,Arial;
+  font-size: 12px;
+  font-weight: normal;
+  line-height: 30px;
+}
+.notes_with_border {
+  border: 1px solid blue;
+}
+
+    </style>
+</head>
+<body>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+   "name": "Success Chart",
+   "className": "CustomApp",
+   "server": "https://rally1.rallydev.com",
+   "sdk": "2.0",
+   "javascript": [
+      "ProgressCalculator.js",
+      "App.js"
+   ],
+   "css": [
+      "app.css"
+   ]
+}

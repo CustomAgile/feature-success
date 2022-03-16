@@ -1,0 +1,96 @@
+.app {
+     /* Add app styles here */
+}
+
+.red_label {
+  border: 1px solid #F66349;
+  background-color: #F66349;
+  color: white;
+  font-family: ProximaNovaSemiBold,helvetica,sans-serif;
+  padding: 4px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.green_label {
+  border: 1px solid #8DC63F;
+  background-color: #8DC63F;
+  color: white;
+  font-family: ProximaNovaSemiBold,helvetica,sans-serif;
+  padding: 4px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.yellow_label {
+  border: 1px solid #F8B500;
+  background-color: #F8B500;
+  color: white;
+  font-family: ProximaNovaSemiBold,helvetica,sans-serif;
+  padding: 4px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  margin: 0px auto;
+}
+
+
+
+.rally-grid .x-grid-row-summary > .red > .x-grid-cell-inner,
+.rally-grid .red > .x-grid-cell-inner {
+  border: 1px solid #F66349;
+  border-radius: 4px;
+  margin: 2px;
+  padding: 4px 0 !important;
+  text-align: center !important;
+  color: white;
+  text-transform: uppercase;
+  background: #F66349;
+  }
+  
+  .rally-grid .x-grid-row-summary > .yellow > .x-grid-cell-inner,
+.rally-grid .yellow > .x-grid-cell-inner {
+  border: 1px solid #FAD200;
+  border-radius: 4px;
+  margin: 2px;
+  padding: 4px 0 !important;
+  text-align: center !important;
+  color: black;
+  text-transform: uppercase;
+  background: #FAD200;
+  }
+  
+.rally-grid .x-grid-row-summary > .green > .x-grid-cell-inner,
+.rally-grid .green > .x-grid-cell-inner {
+  border: 1px solid #8DC63F;
+  border-radius: 4px;
+  margin: 2px;
+  padding: 4px 0 !important;
+  text-align: center !important;
+  color: white;
+  text-transform: uppercase;
+  background: #8DC63F;
+  }
+  
+.rally-grid .x-grid-row-summary > .grey > .x-grid-cell-inner,
+.rally-grid .grey > .x-grid-cell-inner {
+  border: 1px solid #e4e4e4;
+  border-radius: 4px;
+  margin: 2px;
+  padding: 4px 0 !important;
+  text-align: center !important;
+  color: black;
+  background: #8DC63F;
+}
+
+.notes_recommendation {
+  font-family: ProximaNovaSemiBold,Helvetica,Arial;
+  font-size: 12px;
+  font-weight: normal;
+  line-height: 30px;
+}
+
+
+
+.notes_with_border {
+  border: 1px solid blue;
+}  
